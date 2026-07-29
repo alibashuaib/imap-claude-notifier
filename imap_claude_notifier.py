@@ -175,6 +175,7 @@ Body:
 {email_item['body']}
 
 Reply in exactly this format, nothing else:
+CATEGORY: <Resume/Job Application / Promotional or Marketing / Other>
 SUMMARY: <1-2 sentence summary of what this email is about>
 URGENCY: <Low / Medium / High>
 ACTION: <what, if anything, needs to be done -- or "None, informational">"""
@@ -197,6 +198,16 @@ ACTION: <what, if anything, needs to be done -- or "None, informational">"""
     data = resp.json()
     text_blocks = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
     return "\n".join(text_blocks).strip() or "(Claude returned no summary)"
+
+
+SKIP_CATEGORIES = ("resume", "job application", "promotional", "marketing")
+
+
+def get_category(summary_text):
+    for line in summary_text.splitlines():
+        if line.upper().startswith("CATEGORY:"):
+            return line.split(":", 1)[1].strip()
+    return ""
 
 
 def send_telegram(text):
@@ -233,7 +244,12 @@ def main():
             summary = summarize_with_claude(item)
         except Exception as e:
             log.error("Claude summarization failed for UID %s: %s", item["uid"], e)
-            summary = "SUMMARY: (Claude call failed)\nURGENCY: Unknown\nACTION: Check email manually"
+            summary = "CATEGORY: Other\nSUMMARY: (Claude call failed)\nURGENCY: Unknown\nACTION: Check email manually"
+
+        category = get_category(summary)
+        if any(kw in category.lower() for kw in SKIP_CATEGORIES):
+            log.info("Skipped UID %s (category: %s): %s", item["uid"], category, item["subject"])
+            continue
 
         message = (
             f"\U0001F4E7 <b>New Email</b>\n"
